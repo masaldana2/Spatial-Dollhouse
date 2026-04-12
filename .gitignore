@@ -1,0 +1,18 @@
+# macOS
+.DS_Store
+
+# Xcode user data
+*.xcworkspace/xcuserdata/
+*.xcuserdatad/
+*.xcuserstate
+
+# Swift Package Manager
+.build/
+.swiftpm/
+Packages/RealityKitContent/.swiftpm/
+
+# Reality Composer Pro user data
+*.rcuserdata
+
+# Derived data (outside repo by default, but ignore if present)
+DerivedData/
