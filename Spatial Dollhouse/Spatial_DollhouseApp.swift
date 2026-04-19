@@ -12,6 +12,7 @@ import RealityKit
 struct Spatial_DollhouseApp: App {
 
     @State private var appModel = AppModel()
+    @State private var projectsModel = ProjectsModel()
 
     init() {
         FurnitureComponent.registerComponent()
@@ -26,6 +27,7 @@ struct Spatial_DollhouseApp: App {
         WindowGroup(id: appModel.mainWindowID) {
             ContentView()
                 .environment(appModel)
+                .environment(projectsModel)
         }
 
         WindowGroup(id: appModel.furnitureWindowID) {
@@ -41,6 +43,9 @@ struct Spatial_DollhouseApp: App {
                 }
                 .onDisappear {
                     appModel.immersiveSpaceState = .closed
+                    appModel.immersiveProject = nil
+                    appModel.immersiveLoadErrorMessage = nil
+                    appModel.isImmersiveModelLoading = false
                 }
         }
         .immersionStyle(selection: .constant(.mixed), in: .mixed)
