@@ -13,7 +13,6 @@ struct ContentView: View {
     @Environment(AppModel.self) private var appModel
     @Environment(ProjectsModel.self) private var projectsModel
     @Environment(\.openImmersiveSpace) private var openImmersiveSpace
-    @State private var selectedProject: ProjectSummary?
 
     private let columns = [
         GridItem(.adaptive(minimum: 220, maximum: 320), spacing: 16)
@@ -46,15 +45,11 @@ struct ContentView: View {
                         }
                     }
                 }
-                .padding(.horizontal, 24)
-                .padding(.vertical, 28)
-                .frame(maxWidth: 1180, alignment: .topLeading)
+            .padding(.horizontal, 24)
+            .padding(.vertical, 28)
+            .frame(maxWidth: 1180, alignment: .topLeading)
             }
             .navigationBarHidden(true)
-            .navigationDestination(item: $selectedProject) { project in
-                ProjectDetailView(project: project)
-                    .environment(appModel)
-            }
         }
         .sheet(isPresented: $projectsModel.isImportOptionsPresented) {
             ProjectImportOptionsSheet()
@@ -90,9 +85,13 @@ struct ContentView: View {
 
     private func openProjectInImmersiveSpace(_ project: ProjectSummary) {
         guard project.isImmersiveReady else { return }
+        guard let imageData = project.thumbnailData else {
+            projectsModel.importMessage = "The project image could not be loaded."
+            return
+        }
 
         Task { @MainActor in
-            selectedProject = project
+            appModel.loadFloorplan(data: imageData, filename: project.imageFileURL.lastPathComponent)
             appModel.immersiveProject = project
             appModel.immersiveLoadErrorMessage = nil
             appModel.isImmersiveModelLoading = true

@@ -72,6 +72,12 @@ class AppModel {
         floorplanRevision += 1
     }
 
+    func loadFloorplan(data: Data, filename: String?) {
+        floorplanData = data
+        floorplanFilename = filename
+        floorplanRevision += 1
+    }
+
     func resetToBundledFloorplan() {
         floorplanData = nil
         floorplanFilename = nil
