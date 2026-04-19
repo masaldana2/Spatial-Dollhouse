@@ -51,6 +51,7 @@ struct ProjectTileView: View {
             .background(.background, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
         }
         .buttonStyle(.plain)
+        .padding(8)
         .disabled(!project.isImmersiveReady)
         .accessibilityHint(project.isImmersiveReady ? "Opens the model in immersive space." : "Immersive preview is available after the model finishes generating.")
         .opacity(project.isImmersiveReady ? 1 : 0.96)

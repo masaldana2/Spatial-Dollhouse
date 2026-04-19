@@ -19,7 +19,7 @@ final class ProjectsModel {
     private var generationTasks: [UUID: Task<Void, Never>] = [:]
 
     init(
-        repository: ProjectsRepository = ProjectsRepository(),
+        repository: ProjectsRepository,
         generationPipeline: ProjectModelGenerationPipeline? = nil
     ) {
         self.repository = repository

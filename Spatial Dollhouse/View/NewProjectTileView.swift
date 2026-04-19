@@ -45,6 +45,7 @@ struct NewProjectTileView: View {
             }
         }
         .buttonStyle(.plain)
+        .padding(8)
         .accessibilityLabel("Create a new project")
     }
 }

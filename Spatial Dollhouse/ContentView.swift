@@ -16,7 +16,7 @@ struct ContentView: View {
     @State private var selectedProject: ProjectSummary?
 
     private let columns = [
-        GridItem(.adaptive(minimum: 220, maximum: 320), spacing: 18)
+        GridItem(.adaptive(minimum: 220, maximum: 320), spacing: 16)
     ]
 
     var body: some View {
@@ -35,7 +35,7 @@ struct ContentView: View {
                             .glassBackgroundEffect(in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                     }
 
-                    LazyVGrid(columns: columns, alignment: .leading, spacing: 18) {
+                    LazyVGrid(columns: columns, alignment: .leading, spacing: 16) {
                         NewProjectTileView {
                             projectsModel.isImportOptionsPresented = true
                         }
@@ -120,9 +120,21 @@ struct ContentView: View {
 }
 
 #Preview(windowStyle: .automatic) {
-    ContentView()
-        .environment(AppModel())
-        .environment(ProjectsModel())
+    let appModel = AppModel()
+
+    do {
+        let appDataStore = try AppDataStore()
+        let projectsModel = ProjectsModel(
+            repository: ProjectsRepository(appDataStore: appDataStore)
+        )
+
+        return ContentView()
+            .environment(appModel)
+            .environment(projectsModel)
+    } catch {
+        print("[ContentView Preview] Failed to initialize AppDataStore: \(error.localizedDescription)")
+        return Text("Failed to load preview.")
+    }
 }
 
 //struct ContentView: View {

@@ -7,14 +7,28 @@
 
 import SwiftUI
 import RealityKit
+import SwiftData
 
 @main
 struct Spatial_DollhouseApp: App {
-
-    @State private var appModel = AppModel()
-    @State private var projectsModel = ProjectsModel()
+    private let appDataStore: AppDataStore
+    @State private var appModel: AppModel
+    @State private var projectsModel: ProjectsModel
 
     init() {
+        do {
+            let appDataStore = try AppDataStore()
+            self.appDataStore = appDataStore
+            _appModel = State(initialValue: AppModel())
+            _projectsModel = State(
+                initialValue: ProjectsModel(
+                    repository: ProjectsRepository(appDataStore: appDataStore)
+                )
+            )
+        } catch {
+            fatalError("Failed to initialize app data store: \(error.localizedDescription)")
+        }
+
         FurnitureComponent.registerComponent()
         SpawnAnimationComponent.registerComponent()
         FloorSystem.registerSystem()
@@ -29,11 +43,13 @@ struct Spatial_DollhouseApp: App {
                 .environment(appModel)
                 .environment(projectsModel)
         }
+        .modelContainer(appDataStore.modelContainer)
 
         WindowGroup(id: appModel.furnitureWindowID) {
             FurnitureWindowView()
                 .environment(appModel)
         }
+        .modelContainer(appDataStore.modelContainer)
 
         ImmersiveSpace(id: appModel.immersiveSpaceID) {
             ImmersiveView()
@@ -49,5 +65,6 @@ struct Spatial_DollhouseApp: App {
                 }
         }
         .immersionStyle(selection: .constant(.mixed), in: .mixed)
+        .modelContainer(appDataStore.modelContainer)
     }
 }

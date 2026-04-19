@@ -516,27 +516,6 @@ private extension FloorplanSegmentationMask {
     }
 }
 
-private struct WallComponent {
-    let bounds: CGRect
-    let pixelCount: Int
-
-    var isPrimarilyVertical: Bool {
-        bounds.height >= max(bounds.width * 2, 12)
-    }
-
-    var isPrimarilyHorizontal: Bool {
-        bounds.width >= max(bounds.height * 2, 12)
-    }
-
-    var isMostlyVertical: Bool {
-        bounds.height >= max(bounds.width * 1.35, 10)
-    }
-
-    var isMostlyHorizontal: Bool {
-        bounds.width >= max(bounds.height * 1.35, 10)
-    }
-}
-
 enum FloorplanSegmentationDecoder {
     static func decode(_ multiArray: MLMultiArray) -> FloorplanSegmentationMask {
         let shape = multiArray.shape.map { Int(truncating: $0) }
@@ -616,7 +595,7 @@ enum FloorplanSegmentationDecoder {
 
         let value = multiArray[index]
         switch multiArray.dataType {
-        case .int32:
+        case .int32, .int8:
             return value.intValue
         case .float16, .float32, .double:
             return Int(value.doubleValue.rounded())

@@ -1,39 +1,32 @@
 import Foundation
+import SwiftData
 
+@MainActor
 struct ProjectsRepository {
     private let fileManager: FileManager
     private let documentsURL: URL
-    private let jsonEncoder = JSONEncoder()
-    private let jsonDecoder = JSONDecoder()
+    private let appDataStore: AppDataStore
 
     init(
+        appDataStore: AppDataStore,
         fileManager: FileManager = .default,
         documentsURL: URL? = nil
     ) {
+        self.appDataStore = appDataStore
         self.fileManager = fileManager
         self.documentsURL = documentsURL ?? fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
     }
 
     func loadProjects() throws -> [ProjectSummary] {
-        guard fileManager.fileExists(atPath: documentsURL.path()) else {
-            return []
+        try fetchProjects().compactMap { record in
+            try? loadProject(from: record)
         }
-
-        let folderURLs = try fileManager.contentsOfDirectory(
-            at: documentsURL,
-            includingPropertiesForKeys: [.isDirectoryKey],
-            options: [.skipsHiddenFiles]
-        )
-
-        let projects = folderURLs.compactMap { folderURL in
-            try? loadProject(at: folderURL)
-        }
-        return projects.sorted { $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending }
     }
 
     func createProject(name: String, imageData: Data, fileExtension: String?) throws -> ProjectSummary {
         let projectID = UUID()
-        let folderURL = documentsURL.appendingPathComponent(projectID.uuidString, isDirectory: true)
+        let directoryName = projectID.uuidString
+        let folderURL = projectFolderURL(directoryName: directoryName)
         try fileManager.createDirectory(at: folderURL, withIntermediateDirectories: true)
 
         let normalizedExtension = normalizedFileExtension(fileExtension)
@@ -41,43 +34,37 @@ struct ProjectsRepository {
         let imageFileURL = folderURL.appendingPathComponent(imageFilename)
         try imageData.write(to: imageFileURL, options: .atomic)
 
-        let metadata = StoredProjectMetadata(
+        let timestamp = Date()
+        let record = ProjectRecord(
             id: projectID,
             name: name,
+            directoryName: directoryName,
             imageFilename: imageFilename,
             modelFilename: nil,
-            generationStatus: "idle",
-            generationErrorMessage: nil
+            generationStatus: ProjectGenerationState.idle.statusValue,
+            generationErrorMessage: nil,
+            createdAt: timestamp,
+            updatedAt: timestamp
         )
-        try writeMetadata(metadata, in: folderURL)
+        appDataStore.modelContainer.mainContext.insert(record)
+        try appDataStore.modelContainer.mainContext.save()
 
-        return ProjectSummary(
-            id: projectID,
-            name: name,
-            thumbnailData: imageData,
-            directoryURL: folderURL,
-            imageFileURL: imageFileURL,
-            modelFileURL: nil,
-            generationState: .idle
-        )
+        guard let project = try loadPersistedProject(from: record) else {
+            throw ProjectsRepositoryError.projectAssetsMissing
+        }
+
+        return project
     }
 
     func markGenerationState(
         for projectID: UUID,
         state: ProjectGenerationState
     ) throws -> ProjectSummary {
-        let folderURL = documentsURL.appendingPathComponent(projectID.uuidString, isDirectory: true)
-        let metadata = try loadMetadata(at: folderURL)
-        let updatedMetadata = StoredProjectMetadata(
-            id: metadata.id,
-            name: metadata.name,
-            imageFilename: metadata.imageFilename,
-            modelFilename: metadata.modelFilename,
-            generationStatus: state.statusValue,
-            generationErrorMessage: generationErrorMessage(for: state)
-        )
-        try writeMetadata(updatedMetadata, in: folderURL)
-        guard let project = try loadPersistedProject(at: folderURL, metadata: updatedMetadata) else {
+        let updatedRecord = try updateProject(id: projectID) { record in
+            record.generationStatus = state.statusValue
+            record.generationErrorMessage = generationErrorMessage(for: state)
+        }
+        guard let project = try loadPersistedProject(from: updatedRecord) else {
             throw ProjectsRepositoryError.projectAssetsMissing
         }
         return project
@@ -88,52 +75,33 @@ struct ProjectsRepository {
         named filename: String,
         modelDataProvider: (URL) async throws -> Void
     ) async throws -> ProjectSummary {
-        let folderURL = documentsURL.appendingPathComponent(projectID.uuidString, isDirectory: true)
-        let metadata = try loadMetadata(at: folderURL)
+        let record = try fetchProject(id: projectID)
+        let folderURL = projectFolderURL(directoryName: record.directoryName)
         let normalizedFilename = normalizedModelFilename(filename)
         let modelFileURL = folderURL.appendingPathComponent(normalizedFilename)
         try await modelDataProvider(modelFileURL)
 
-        let updatedMetadata = StoredProjectMetadata(
-            id: metadata.id,
-            name: metadata.name,
-            imageFilename: metadata.imageFilename,
-            modelFilename: normalizedFilename,
-            generationStatus: ProjectGenerationState.ready.statusValue,
-            generationErrorMessage: nil
-        )
-        try writeMetadata(updatedMetadata, in: folderURL)
-        guard let project = try loadPersistedProject(at: folderURL, metadata: updatedMetadata) else {
+        let updatedRecord = try updateProject(id: projectID) { project in
+            project.modelFilename = normalizedFilename
+            project.generationStatus = ProjectGenerationState.ready.statusValue
+            project.generationErrorMessage = nil
+        }
+        guard let project = try loadPersistedProject(from: updatedRecord) else {
             throw ProjectsRepositoryError.projectAssetsMissing
         }
         return project
     }
 
-    private func loadProject(at folderURL: URL) throws -> ProjectSummary? {
-        let values = try folderURL.resourceValues(forKeys: [.isDirectoryKey])
-        guard values.isDirectory == true else {
-            return nil
+    private func loadProject(from record: ProjectRecord) throws -> ProjectSummary? {
+        if record.generationStatus == ProjectGenerationState.generating.statusValue {
+            let interruptedRecord = try updateProject(id: record.id) { project in
+                project.generationStatus = ProjectGenerationState.failed("").statusValue
+                project.generationErrorMessage = "3D generation was interrupted before completion."
+            }
+            return try loadPersistedProject(from: interruptedRecord)
         }
 
-        let metadataURL = folderURL.appendingPathComponent("project.json")
-        guard fileManager.fileExists(atPath: metadataURL.path()) else {
-            return nil
-        }
-
-        var metadata = try loadMetadata(at: folderURL)
-        if metadata.generationStatus == ProjectGenerationState.generating.statusValue {
-            metadata = StoredProjectMetadata(
-                id: metadata.id,
-                name: metadata.name,
-                imageFilename: metadata.imageFilename,
-                modelFilename: metadata.modelFilename,
-                generationStatus: "failed",
-                generationErrorMessage: "3D generation was interrupted before completion."
-            )
-            try writeMetadata(metadata, in: folderURL)
-        }
-
-        return try loadPersistedProject(at: folderURL, metadata: metadata)
+        return try loadPersistedProject(from: record)
     }
 
     private func sanitizedFilename(from name: String) -> String {
@@ -163,14 +131,15 @@ struct ProjectsRepository {
         return "\(normalizedStem).\(ext)"
     }
 
-    private func loadPersistedProject(at folderURL: URL, metadata: StoredProjectMetadata) throws -> ProjectSummary? {
-        let imageFileURL = folderURL.appendingPathComponent(metadata.imageFilename)
+    private func loadPersistedProject(from record: ProjectRecord) throws -> ProjectSummary? {
+        let folderURL = projectFolderURL(directoryName: record.directoryName)
+        let imageFileURL = folderURL.appendingPathComponent(record.imageFilename)
         guard fileManager.fileExists(atPath: imageFileURL.path()) else {
             return nil
         }
 
         let imageData = try Data(contentsOf: imageFileURL)
-        let modelFileURL = metadata.modelFilename.map { folderURL.appendingPathComponent($0) }
+        let modelFileURL = record.modelFilename.map { folderURL.appendingPathComponent($0) }
         let resolvedModelFileURL: URL?
         if let modelFileURL, fileManager.fileExists(atPath: modelFileURL.path()) {
             resolvedModelFileURL = modelFileURL
@@ -179,13 +148,13 @@ struct ProjectsRepository {
         }
 
         let generationState = projectGenerationState(
-            from: metadata,
+            from: record,
             modelFileURL: resolvedModelFileURL
         )
 
         return ProjectSummary(
-            id: metadata.id,
-            name: metadata.name,
+            id: record.id,
+            name: record.name,
             thumbnailData: imageData,
             directoryURL: folderURL,
             imageFileURL: imageFileURL,
@@ -194,23 +163,46 @@ struct ProjectsRepository {
         )
     }
 
-    private func loadMetadata(at folderURL: URL) throws -> StoredProjectMetadata {
-        let metadataURL = folderURL.appendingPathComponent("project.json")
-        let metadataData = try Data(contentsOf: metadataURL)
-        return try jsonDecoder.decode(StoredProjectMetadata.self, from: metadataData)
+    private func projectFolderURL(directoryName: String) -> URL {
+        documentsURL.appendingPathComponent(directoryName, isDirectory: true)
     }
 
-    private func writeMetadata(_ metadata: StoredProjectMetadata, in folderURL: URL) throws {
-        let metadataURL = folderURL.appendingPathComponent("project.json")
-        let metadataData = try jsonEncoder.encode(metadata)
-        try metadataData.write(to: metadataURL, options: .atomic)
+    private func fetchProjects() throws -> [ProjectRecord] {
+        let descriptor = FetchDescriptor<ProjectRecord>(
+            sortBy: [SortDescriptor(\.name)]
+        )
+        return try appDataStore.modelContainer.mainContext.fetch(descriptor)
+    }
+
+    private func fetchProject(id: UUID) throws -> ProjectRecord {
+        var descriptor = FetchDescriptor<ProjectRecord>(
+            predicate: #Predicate { $0.id == id }
+        )
+        descriptor.fetchLimit = 1
+
+        guard let record = try appDataStore.modelContainer.mainContext.fetch(descriptor).first else {
+            throw ProjectsRepositoryError.projectNotFound(id)
+        }
+
+        return record
+    }
+
+    private func updateProject(
+        id: UUID,
+        mutate: (ProjectRecord) -> Void
+    ) throws -> ProjectRecord {
+        let record = try fetchProject(id: id)
+        mutate(record)
+        record.updatedAt = Date()
+        try appDataStore.modelContainer.mainContext.save()
+        return record
     }
 
     private func projectGenerationState(
-        from metadata: StoredProjectMetadata,
+        from record: ProjectRecord,
         modelFileURL: URL?
     ) -> ProjectGenerationState {
-        switch metadata.generationStatus {
+        switch record.generationStatus {
         case ProjectGenerationState.idle.statusValue:
             return .idle
         case ProjectGenerationState.generating.statusValue:
@@ -221,9 +213,9 @@ struct ProjectsRepository {
             }
             return .ready
         case "failed":
-            return .failed(metadata.generationErrorMessage ?? "")
+            return .failed(record.generationErrorMessage ?? "")
         default:
-            return .failed(metadata.generationErrorMessage ?? "3D model generation failed.")
+            return .failed(record.generationErrorMessage ?? "3D model generation failed.")
         }
     }
 
@@ -239,11 +231,14 @@ struct ProjectsRepository {
 
 private enum ProjectsRepositoryError: LocalizedError {
     case projectAssetsMissing
+    case projectNotFound(UUID)
 
     var errorDescription: String? {
         switch self {
         case .projectAssetsMissing:
             return "The project files could not be reloaded from disk."
+        case .projectNotFound(let id):
+            return "Project \(id.uuidString) could not be found in the repository."
         }
     }
 }
