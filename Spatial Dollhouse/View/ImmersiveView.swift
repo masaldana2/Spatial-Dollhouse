@@ -7,6 +7,7 @@
 
 import SwiftUI
 import RealityKit
+import Foundation
 
 struct ImmersiveView: View {
     @Environment(AppModel.self) private var appModel
@@ -19,18 +20,26 @@ struct ImmersiveView: View {
     var body: some View {
         RealityView { content in
             do {
-                guard let floorplanImage = appModel.activeFloorplanCGImage() else {
+                guard let project = appModel.immersiveProject,
+                      let geometryFileURL = project.geometryFileURL else {
+                    appModel.immersiveLoadErrorMessage = "The immersive scene cache is missing for this project."
+                    appModel.isImmersiveModelLoading = false
                     return
                 }
 
-                let dollhouse = try FloorplanDollhouseBuilder.build(from: floorplanImage)
+                let sceneData = try Data(contentsOf: geometryFileURL)
+                let storedScene = try JSONDecoder().decode(StoredFloorplanScene.self, from: sceneData)
+                let dollhouse = try FloorplanDollhouseBuilder.build(from: storedScene)
                 dollhouse.position.y += 1.0
                 content.add(dollhouse)
 
                 let immersiveToScene = content.transform(from: .immersiveSpace, to: .scene)
                 appModel.configureImmersiveContext(rootEntity: dollhouse, transform: immersiveToScene)
+                appModel.isImmersiveModelLoading = false
                 subscribeToManipulationCallbacksIfNeeded(in: content)
             } catch {
+                appModel.immersiveLoadErrorMessage = error.localizedDescription
+                appModel.isImmersiveModelLoading = false
                 print("Failed to generate dollhouse: \(error.localizedDescription)")
             }
         } update: { content in
@@ -56,7 +65,7 @@ struct ImmersiveView: View {
             dismissWindow(id: appModel.mainWindowID)
             openWindow(id: appModel.furnitureWindowID)
         }
-        .id(appModel.floorplanRevision)
+        .id(appModel.immersiveProject?.id)
     }
 
     private func subscribeToManipulationCallbacksIfNeeded(in content: RealityViewContent) {

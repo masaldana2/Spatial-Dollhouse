@@ -1,6 +1,6 @@
 import CoreGraphics
 
-enum FloorplanRegionKind: String, CaseIterable, Identifiable {
+enum FloorplanRegionKind: String, CaseIterable, Identifiable, Codable {
     case room
     case door
     case window
@@ -41,7 +41,7 @@ enum FloorplanRegionKind: String, CaseIterable, Identifiable {
     }
 }
 
-enum WallAxis: String, Identifiable {
+enum WallAxis: String, Identifiable, Codable {
     case horizontal
     case vertical
 
@@ -57,7 +57,7 @@ enum WallAxis: String, Identifiable {
     }
 }
 
-struct FloorplanDetectedRegion: Identifiable {
+struct FloorplanDetectedRegion: Identifiable, Codable {
     let id: String
     let kind: FloorplanRegionKind
     let boundingBox: CGRect
@@ -72,7 +72,7 @@ struct FloorplanDetectedRegion: Identifiable {
     }
 }
 
-struct FloorplanWallSegment: Identifiable {
+struct FloorplanWallSegment: Identifiable, Codable {
     let id: String
     let axis: WallAxis
     let start: CGPoint
@@ -96,7 +96,7 @@ struct FloorplanWallSegment: Identifiable {
     }
 }
 
-struct FloorplanWallJunction: Identifiable {
+struct FloorplanWallJunction: Identifiable, Codable {
     let id: String
     let point: CGPoint
     let horizontalWallID: String
@@ -107,7 +107,7 @@ struct FloorplanWallJunction: Identifiable {
     }
 }
 
-struct FloorplanOpeningCandidate: Identifiable {
+struct FloorplanOpeningCandidate: Identifiable, Codable {
     let id: String
     let kind: FloorplanRegionKind
     let axis: WallAxis
@@ -139,7 +139,7 @@ struct FloorplanOpeningCandidate: Identifiable {
     }
 }
 
-struct FloorplanGeometrySummary {
+struct FloorplanGeometrySummary: Codable {
     let roomCount: Int
     let doorCount: Int
     let windowCount: Int

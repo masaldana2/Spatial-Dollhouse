@@ -133,7 +133,8 @@ final class ProjectsModel {
             let generatedAsset = try await generationPipeline.generateModelAsset(for: generatingProject)
             let readyProject = try await repository.saveGeneratedModel(
                 for: generatingProject.id,
-                named: generatedAsset.filename
+                named: generatedAsset.filename,
+                geometryData: try generatedAsset.encodedImmersiveScene()
             ) { outputURL in
                 try await generatedAsset.write(to: outputURL)
             }

@@ -3,6 +3,10 @@ import SwiftData
 
 @MainActor
 struct ProjectsRepository {
+    private enum ProjectAssetName {
+        static let immersiveScene = "immersive-scene.json"
+    }
+
     private let fileManager: FileManager
     private let documentsURL: URL
     private let appDataStore: AppDataStore
@@ -73,13 +77,16 @@ struct ProjectsRepository {
     func saveGeneratedModel(
         for projectID: UUID,
         named filename: String,
+        geometryData: Data,
         modelDataProvider: (URL) async throws -> Void
     ) async throws -> ProjectSummary {
         let record = try fetchProject(id: projectID)
         let folderURL = projectFolderURL(directoryName: record.directoryName)
         let normalizedFilename = normalizedModelFilename(filename)
         let modelFileURL = folderURL.appendingPathComponent(normalizedFilename)
+        let geometryFileURL = folderURL.appendingPathComponent(ProjectAssetName.immersiveScene)
         try await modelDataProvider(modelFileURL)
+        try geometryData.write(to: geometryFileURL, options: .atomic)
 
         let updatedRecord = try updateProject(id: projectID) { project in
             project.modelFilename = normalizedFilename
@@ -140,16 +147,24 @@ struct ProjectsRepository {
 
         let imageData = try Data(contentsOf: imageFileURL)
         let modelFileURL = record.modelFilename.map { folderURL.appendingPathComponent($0) }
+        let geometryFileURL = folderURL.appendingPathComponent(ProjectAssetName.immersiveScene)
         let resolvedModelFileURL: URL?
         if let modelFileURL, fileManager.fileExists(atPath: modelFileURL.path()) {
             resolvedModelFileURL = modelFileURL
         } else {
             resolvedModelFileURL = nil
         }
+        let resolvedGeometryFileURL: URL?
+        if fileManager.fileExists(atPath: geometryFileURL.path()) {
+            resolvedGeometryFileURL = geometryFileURL
+        } else {
+            resolvedGeometryFileURL = nil
+        }
 
         let generationState = projectGenerationState(
             from: record,
-            modelFileURL: resolvedModelFileURL
+            modelFileURL: resolvedModelFileURL,
+            geometryFileURL: resolvedGeometryFileURL
         )
 
         return ProjectSummary(
@@ -159,6 +174,7 @@ struct ProjectsRepository {
             directoryURL: folderURL,
             imageFileURL: imageFileURL,
             modelFileURL: resolvedModelFileURL,
+            geometryFileURL: resolvedGeometryFileURL,
             generationState: generationState
         )
     }
@@ -200,7 +216,8 @@ struct ProjectsRepository {
 
     private func projectGenerationState(
         from record: ProjectRecord,
-        modelFileURL: URL?
+        modelFileURL: URL?,
+        geometryFileURL: URL?
     ) -> ProjectGenerationState {
         switch record.generationStatus {
         case ProjectGenerationState.idle.statusValue:
@@ -210,6 +227,9 @@ struct ProjectsRepository {
         case ProjectGenerationState.ready.statusValue:
             if modelFileURL == nil {
                 return .failed("The saved 3D model could not be found in the project folder.")
+            }
+            if geometryFileURL == nil {
+                return .failed("The immersive scene cache could not be found in the project folder.")
             }
             return .ready
         case "failed":

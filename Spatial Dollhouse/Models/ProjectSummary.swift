@@ -7,10 +7,11 @@ struct ProjectSummary: Identifiable, Hashable {
     var directoryURL: URL
     var imageFileURL: URL
     var modelFileURL: URL?
+    var geometryFileURL: URL?
     var generationState: ProjectGenerationState
     
     var isImmersiveReady: Bool {
-        generationState == .ready && modelFileURL != nil
+        generationState == .ready && geometryFileURL != nil
     }
 
     init(
@@ -20,6 +21,7 @@ struct ProjectSummary: Identifiable, Hashable {
         directoryURL: URL,
         imageFileURL: URL,
         modelFileURL: URL? = nil,
+        geometryFileURL: URL? = nil,
         generationState: ProjectGenerationState = .idle
     ) {
         self.id = id
@@ -28,6 +30,7 @@ struct ProjectSummary: Identifiable, Hashable {
         self.directoryURL = directoryURL
         self.imageFileURL = imageFileURL
         self.modelFileURL = modelFileURL
+        self.geometryFileURL = geometryFileURL
         self.generationState = generationState
     }
     

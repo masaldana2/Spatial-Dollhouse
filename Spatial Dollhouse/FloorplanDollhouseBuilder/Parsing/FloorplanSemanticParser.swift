@@ -7,6 +7,9 @@ import CoreGraphics
 import Foundation
 
 final class FloorplanSemanticParser {
+    /// Legacy prototype parser for direct image-to-3D experiments.
+    /// Production generation must come from the CoreML pipeline, not from
+    /// parsing the raster image directly inside the immersive builder.
     func parse(image: CGImage, config: DollhouseBuildConfig) throws -> FloorplanSemanticModel {
         guard let grid = FloorplanMaskParser.parse(image: image, cellSize: config.cellSize) else {
             throw FloorplanDollhouseBuilderError.parseFailure

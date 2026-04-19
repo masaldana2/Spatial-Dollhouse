@@ -85,13 +85,8 @@ struct ContentView: View {
 
     private func openProjectInImmersiveSpace(_ project: ProjectSummary) {
         guard project.isImmersiveReady else { return }
-        guard let imageData = project.thumbnailData else {
-            projectsModel.importMessage = "The project image could not be loaded."
-            return
-        }
 
         Task { @MainActor in
-            appModel.loadFloorplan(data: imageData, filename: project.imageFileURL.lastPathComponent)
             appModel.immersiveProject = project
             appModel.immersiveLoadErrorMessage = nil
             appModel.isImmersiveModelLoading = true

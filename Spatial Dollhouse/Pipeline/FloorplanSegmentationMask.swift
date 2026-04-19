@@ -1,6 +1,6 @@
 import CoreML
 
-struct FloorplanSegmentationMask {
+struct FloorplanSegmentationMask: Codable {
     let width: Int
     let height: Int
     let classIDs: [UInt8]

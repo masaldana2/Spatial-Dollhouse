@@ -79,6 +79,7 @@ struct ProjectDetailView: View {
             detailRow(title: "Folder", value: project.directoryURL.lastPathComponent)
             detailRow(title: "Image File", value: project.imageFileURL.lastPathComponent)
             detailRow(title: "Model File", value: project.modelFileURL?.lastPathComponent ?? "Not available")
+            detailRow(title: "Scene File", value: project.geometryFileURL?.lastPathComponent ?? "Not available")
         }
         .padding(18)
         .frame(maxWidth: .infinity, alignment: .topLeading)

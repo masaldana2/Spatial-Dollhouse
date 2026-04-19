@@ -21,10 +21,15 @@ struct ProjectModelGenerationPipeline {
             summary: analysis.geometrySummary,
             canvasSize: canvasSize
         )
+        let immersiveScene = StoredFloorplanScene(
+            canvasSize: canvasSize,
+            geometrySummary: analysis.geometrySummary
+        )
 
         return GeneratedProjectModelAsset(
             filename: "\(sanitizedFilename(from: project.name)).obj",
-            primitives: primitives
+            primitives: primitives,
+            immersiveScene: immersiveScene
         )
     }
 
@@ -60,6 +65,7 @@ struct ProjectModelGenerationPipeline {
 struct GeneratedProjectModelAsset {
     let filename: String
     let primitives: [FloorplanScenePrimitive]
+    let immersiveScene: StoredFloorplanScene
 
     func write(to url: URL) async throws {
         let fileManager = FileManager.default
@@ -67,5 +73,11 @@ struct GeneratedProjectModelAsset {
             try fileManager.removeItem(at: url)
         }
         try FloorplanOBJExporter.writeOBJ(primitives: primitives, to: url)
+    }
+
+    func encodedImmersiveScene() throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        return try encoder.encode(immersiveScene)
     }
 }

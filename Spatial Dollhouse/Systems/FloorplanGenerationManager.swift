@@ -18,8 +18,24 @@ final class DollhouseGenerationManager {
         self.parser = parser
     }
 
+    func build(from geometrySummary: FloorplanGeometrySummary, canvasSize: CGSize) throws -> Entity {
+        let model = FloorplanSemanticModel(
+            summary: geometrySummary,
+            canvasSize: canvasSize,
+            cellSize: config.cellSize
+        )
+        return try build(from: model)
+    }
+
+    /// Legacy prototype path kept only as reference. The active product path is
+    /// `CoreML -> geometry extraction -> DollhouseGenerationManager.build(from:canvasSize:)`.
+    @available(*, deprecated, message: "Legacy prototype. Build from CoreML-derived geometry instead.")
     func build(from image: CGImage) throws -> Entity {
         let model = try parser.parse(image: image, config: config)
+        return try build(from: model)
+    }
+
+    private func build(from model: FloorplanSemanticModel) throws -> Entity {
         guard !model.walls.isEmpty else {
             throw FloorplanDollhouseBuilderError.noWallsDetected
         }
