@@ -1,0 +1,15 @@
+# Core ML packaged model assets
+Spatial?Dollhouse/Resources/FloorplanSegmentation.mlpackage/Data/com.apple.CoreML/model.mlmodel filter=lfs diff=lfs merge=lfs -text
+Spatial?Dollhouse/Resources/FloorplanSegmentation.mlpackage/Data/com.apple.CoreML/weights/*.bin filter=lfs diff=lfs merge=lfs -text
+
+# RealityKit / USD assets
+*.usdz filter=lfs diff=lfs merge=lfs -text
+
+# Large texture sources used by the immersive scene
+*.exr filter=lfs diff=lfs merge=lfs -text
+*.tiff filter=lfs diff=lfs merge=lfs -text
+
+Spatial?Dollhouse/Resources/FloorTextures/*/*.png filter=lfs diff=lfs merge=lfs -text
+Spatial?Dollhouse/Resources/FloorTextures/*/*.jpg filter=lfs diff=lfs merge=lfs -text
+Spatial?Dollhouse/Resources/WallTextures/*/*.png filter=lfs diff=lfs merge=lfs -text
+Spatial?Dollhouse/Resources/WallTextures/*/*.jpg filter=lfs diff=lfs merge=lfs -text
