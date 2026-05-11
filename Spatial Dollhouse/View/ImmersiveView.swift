@@ -65,6 +65,26 @@ struct ImmersiveView: View {
             dismissWindow(id: appModel.mainWindowID)
             openWindow(id: appModel.furnitureWindowID)
         }
+        .gesture(
+            SpatialTapGesture()
+                .targetedToAnyEntity()
+                .onEnded { value in
+                    appModel.selectFurniture(value.entity)
+                }
+        )
+        .simultaneousGesture(
+            DragGesture(minimumDistance: 4, coordinateSpace: .immersiveSpace)
+                .targetedToAnyEntity()
+                .onChanged { value in
+                    appModel.updateSelectedFurniturePan(
+                        value.entity,
+                        at: value.location3D
+                    )
+                }
+                .onEnded { value in
+                    appModel.endSelectedFurniturePan(value.entity)
+                }
+        )
         .id(appModel.immersiveProject?.id)
     }
 
@@ -72,6 +92,7 @@ struct ImmersiveView: View {
         if manipulationWillBeginSubscription == nil {
             manipulationWillBeginSubscription = content.subscribe(to: ManipulationEvents.WillBegin.self) { event in
                 guard event.entity.components[FurnitureComponent.self] != nil else { return }
+                appModel.selectFurniture(event.entity)
                 print("picked up \(event.entity.name)")
             }
         }

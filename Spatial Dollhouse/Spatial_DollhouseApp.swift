@@ -30,11 +30,15 @@ struct Spatial_DollhouseApp: App {
         }
 
         FurnitureComponent.registerComponent()
+        FurnitureSelectionComponent.registerComponent()
+        FurniturePanComponent.registerComponent()
+        FurnitureFloorClampRequestComponent.registerComponent()
         SpawnAnimationComponent.registerComponent()
         FloorSystem.registerSystem()
         WallSystem.registerSystem()
         DoorSystem.registerSystem()
         WindowSystem.registerSystem()
+        FurnitureSelectionSystem.registerSystem()
     }
 
     var body: some SwiftUI.Scene {

@@ -42,6 +42,8 @@ final class FurnitureSceneRepository {
             pivotPlacement: .volumeCenter
         )
         configureCollision(for: container, using: source)
+        container.components.set(InputTargetComponent(allowedInputTypes: .all))
+        container.components.set(HoverEffectComponent(.highlight(.default)))
 
         return container
     }

@@ -22,6 +22,16 @@ class AppModel {
         case inTransition
         case open
     }
+
+    enum FloorplanPanDirection {
+        case up
+        case right
+        case down
+        case left
+        case yUp
+        case yDown
+    }
+
     var immersiveSpaceState = ImmersiveSpaceState.closed
     var immersiveProject: ProjectSummary?
     var immersiveLoadErrorMessage: String?
@@ -29,6 +39,11 @@ class AppModel {
     private(set) var floorplanData: Data?
     private(set) var floorplanFilename: String?
     private(set) var floorplanRevision = 0
+    private(set) var floorplanScale: Float = AppModel.defaultFloorplanScale
+
+    var floorplanScaleRange: ClosedRange<Float> {
+        floorplanMinimumScale...floorplanMaximumScale
+    }
 
     @MainActor
     var immersiveSpaceToSceneTransform: AffineTransform3D = .identity
@@ -42,6 +57,11 @@ class AppModel {
     private var menuDragStartSceneOrientation: simd_quatf?
     private var menuDragSessionID: UUID?
 
+    private static let defaultFloorplanScale: Float = 0.15
+    private let floorplanPanStep: Float = 0.12
+    private let floorplanScaleStep: Float = 1.1
+    private let floorplanMinimumScale: Float = 0.1
+    private let floorplanMaximumScale: Float = 0.3
     private let bundledFloorplanAssetName = "FloorplanTest"
 
     var activeFloorplanLabel: String {
@@ -85,11 +105,18 @@ class AppModel {
     }
 
     func configureImmersiveContext(rootEntity: Entity, transform: AffineTransform3D) {
+        let didChangeRoot = dollhouseRootEntity !== rootEntity
         dollhouseRootEntity = rootEntity
         immersiveSpaceToSceneTransform = transform
+
+        if didChangeRoot {
+            floorplanScale = clampedFloorplanScale(AppModel.defaultFloorplanScale)
+            rootEntity.scale = SIMD3<Float>(repeating: floorplanScale)
+        }
     }
 
     func clearImmersiveContext() {
+        clearFurnitureSelection()
         dollhouseRootEntity = nil
         menuDragEntity = nil
         dragBubble.remove()
@@ -98,6 +125,7 @@ class AppModel {
         menuDragTargetPose = nil
         menuDragStartSceneOrientation = nil
         menuDragSessionID = nil
+        floorplanScale = AppModel.defaultFloorplanScale
     }
 
     func beginFurnitureMenuDrag(named modelName: String, at immersivePoint: Point3D, inputDevicePose: Pose3D?) {
@@ -129,7 +157,7 @@ class AppModel {
                 guard menuDragSessionID == sessionID else { return }
 
                 root.addChild(newEntity)
-                preserveWorldScaleForPlacedFurniture(newEntity, in: root)
+                scalePlacedFurnitureForFloorplan(newEntity)
                 menuDragEntity = newEntity
                 newEntity.setOrientation(.init(angle: 0, axis: [0, 1, 0]), relativeTo: nil)
                 applyMenuDragTarget(to: newEntity, constrainingTo: nil)
@@ -160,6 +188,7 @@ class AppModel {
     func endFurnitureMenuDrag() {
         if let menuDragEntity {
             dropDraggedFurnitureToFloor(menuDragEntity, resetRotationToZero: true)
+            selectFurniture(menuDragEntity)
         }
         menuDragEntity = nil
         dragBubble.remove()
@@ -184,7 +213,7 @@ class AppModel {
             do {
                 let furniture = try await FurnitureSceneRepository.shared.makePlacedFurniture(named: modelName)
                 root.addChild(furniture)
-                preserveWorldScaleForPlacedFurniture(furniture, in: root)
+                scalePlacedFurnitureForFloorplan(furniture)
 
                 var clamped = desiredWorldPosition
                 if let placement = placementLimits(for: furniture) {
@@ -193,22 +222,98 @@ class AppModel {
                     clamped.y = placement.y
                 }
                 furniture.setPosition(clamped, relativeTo: nil)
+                selectFurniture(furniture)
             } catch {
                 print("Failed to place furniture for \(modelName): \(error.localizedDescription)")
             }
         }
     }
 
+    func panFloorplan(_ direction: FloorplanPanDirection) {
+        guard let root = dollhouseRootEntity else { return }
+
+        var offset = SIMD3<Float>.zero
+        switch direction {
+            case .up:
+                offset.z = -floorplanPanStep
+            case .right:
+                offset.x = floorplanPanStep
+            case .down:
+                offset.z = floorplanPanStep
+            case .left:
+                offset.x = -floorplanPanStep
+            case .yUp:
+                offset.y = floorplanPanStep
+            case .yDown:
+                offset.y = -floorplanPanStep
+        }
+
+        var worldPosition = root.position(relativeTo: nil)
+        worldPosition += offset
+        root.setPosition(worldPosition, relativeTo: nil)
+    }
+
+    func setFloorplanScale(_ scale: Float) {
+        let nextScale = clampedFloorplanScale(scale)
+        floorplanScale = nextScale
+        dollhouseRootEntity?.scale = SIMD3<Float>(repeating: nextScale)
+    }
+
+    func scaleFloorplan(up: Bool) {
+        let factor = up ? floorplanScaleStep : 1 / floorplanScaleStep
+        setFloorplanScale(floorplanScale * factor)
+    }
+
+    func selectFurniture(_ entity: Entity) {
+        guard let furniture = furnitureEntity(for: entity) else {
+            clearFurnitureSelection()
+            return
+        }
+
+        furniture.components.set(FurnitureSelectionComponent())
+    }
+
+    func beginSelectedFurniturePan(_ entity: Entity, at immersivePoint: Point3D) {
+        guard let furniture = furnitureEntity(for: entity) else { return }
+        selectFurniture(furniture)
+        furniture.components.set(
+            FurniturePanComponent(targetWorldPosition: scenePosition(from: immersivePoint))
+        )
+    }
+
+    func updateSelectedFurniturePan(_ entity: Entity, at immersivePoint: Point3D) {
+        guard let furniture = furnitureEntity(for: entity) else { return }
+        selectFurniture(furniture)
+
+        let targetWorldPosition = scenePosition(from: immersivePoint)
+        var pan = furniture.components[FurniturePanComponent.self] ?? FurniturePanComponent(
+            targetWorldPosition: targetWorldPosition
+        )
+        pan.targetWorldPosition = targetWorldPosition
+        pan.isActive = true
+        furniture.components.set(pan)
+    }
+
+    func endSelectedFurniturePan(_ entity: Entity) {
+        guard let furniture = furnitureEntity(for: entity) else { return }
+        guard var pan = furniture.components[FurniturePanComponent.self] else { return }
+        pan.isActive = false
+        furniture.components.set(pan)
+    }
+
+    func clearFurnitureSelection() {
+        guard let root = dollhouseRootEntity else { return }
+        for furniture in allFurniture(in: root) {
+            furniture.components.remove(FurnitureSelectionComponent.self)
+            furniture.components.remove(FurniturePanComponent.self)
+        }
+    }
+
     func updateFurnitureManipulation(_ furniture: Entity) {
         guard furniture.components[FurnitureComponent.self] != nil else { return }
         guard menuDragEntity !== furniture else { return }
-        guard let placement = placementLimits(for: furniture) else { return }
-
-        var worldPosition = furniture.position(relativeTo: nil)
-        worldPosition.x = min(max(worldPosition.x, placement.minX), placement.maxX)
-        worldPosition.z = min(max(worldPosition.z, placement.minZ), placement.maxZ)
-        worldPosition.y = placement.y
-        furniture.setPosition(worldPosition, relativeTo: nil)
+        selectFurniture(furniture)
+        furniture.components.set(FurnitureFloorClampRequestComponent())
     }
 
     func endFurnitureManipulation(_ furniture: Entity) {
@@ -232,10 +337,9 @@ class AppModel {
     private func resolvedMenuDragTarget(
         constrainingTo entity: Entity?
     ) -> (position: SIMD3<Float>, orientation: simd_quatf?)? {
-        guard var scenePoint = menuDragTargetPoint else { return nil }
-        scenePoint.apply(immersiveSpaceToSceneTransform)
+        guard let menuDragTargetPoint else { return nil }
 
-        var position = SIMD3<Float>(scenePoint.vector)
+        var position = scenePosition(from: menuDragTargetPoint)
         if let entity, let placement = placementLimits(for: entity) {
             position.x = min(max(position.x, placement.minX), placement.maxX)
             position.z = min(max(position.z, placement.minZ), placement.maxZ)
@@ -263,6 +367,12 @@ class AppModel {
 
         let sceneFromImmersiveOrientation = simd_quatf(sceneFromImmersiveRotation)
         return simd_normalize(sceneFromImmersiveOrientation * deviceOrientation)
+    }
+
+    private func scenePosition(from immersivePoint: Point3D) -> SIMD3<Float> {
+        var scenePoint = immersivePoint
+        scenePoint.apply(immersiveSpaceToSceneTransform)
+        return SIMD3<Float>(scenePoint.vector)
     }
 
     private func dropDraggedFurnitureToFloor(
@@ -353,18 +463,13 @@ class AppModel {
         )
     }
 
-    private func preserveWorldScaleForPlacedFurniture(_ furniture: Entity, in root: Entity) {
-        let rootScale = root.scale(relativeTo: nil)
-        let safeRootScale = SIMD3<Float>(
-            max(abs(rootScale.x), 0.0001),
-            max(abs(rootScale.y), 0.0001),
-            max(abs(rootScale.z), 0.0001)
-        )
+    private func scalePlacedFurnitureForFloorplan(_ furniture: Entity) {
+        let referenceScale = max(AppModel.defaultFloorplanScale, 0.0001)
         let currentLocalScale = furniture.scale
         furniture.scale = SIMD3<Float>(
-            currentLocalScale.x / safeRootScale.x,
-            currentLocalScale.y / safeRootScale.y,
-            currentLocalScale.z / safeRootScale.z
+            currentLocalScale.x / referenceScale,
+            currentLocalScale.y / referenceScale,
+            currentLocalScale.z / referenceScale
         )
     }
 
@@ -406,6 +511,21 @@ class AppModel {
         return nil
     }
 
+    private func allFurniture(in root: Entity) -> [Entity] {
+        var matches: [Entity] = []
+        collectFurniture(in: root, into: &matches)
+        return matches
+    }
+
+    private func collectFurniture(in root: Entity, into matches: inout [Entity]) {
+        if root.components[FurnitureComponent.self] != nil {
+            matches.append(root)
+        }
+        for child in root.children {
+            collectFurniture(in: child, into: &matches)
+        }
+    }
+
     private func isEntity(_ entity: Entity, descendantOf ancestor: Entity) -> Bool {
         var cursor: Entity? = entity
         while let current = cursor {
@@ -413,5 +533,20 @@ class AppModel {
             cursor = current.parent
         }
         return false
+    }
+
+    private func furnitureEntity(for entity: Entity) -> Entity? {
+        var cursor: Entity? = entity
+        while let current = cursor {
+            if current.components[FurnitureComponent.self] != nil {
+                return current
+            }
+            cursor = current.parent
+        }
+        return nil
+    }
+
+    private func clampedFloorplanScale(_ scale: Float) -> Float {
+        min(max(scale, floorplanMinimumScale), floorplanMaximumScale)
     }
 }
